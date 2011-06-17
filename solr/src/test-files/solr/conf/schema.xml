@@ -450,7 +450,7 @@
    <field name="work" type="xy" indexed="true" stored="true" multiValued="false"/>
 
    <field name="home_ll" type="latLon" indexed="true" stored="true" multiValued="false"/>
-   <field name="home_gh" type="geohash" indexed="true" stored="true" multiValued="false"/>
+   <field name="home_gh" type="geohash" indexed="true" stored="true" multiValued="true"/>
 
 
    <field name="point10" type="tenD" indexed="true" stored="true" multiValued="false"/>

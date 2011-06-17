@@ -85,4 +85,13 @@ public class TestGeoHashUtils extends LuceneTestCase {
     assertEquals(decode[0], GeoHashUtils.decode(geoHash)[0], 0.000001d);
     assertEquals(decode[1], GeoHashUtils.decode(geoHash)[1], 0.000001d);
   }
+
+  /** see the table at http://en.wikipedia.org/wiki/Geohash */
+  @Test
+  public void testHashLenToWidth() {
+    double[] box = GeoHashUtils.lookupDegreesSizeForHashLen(3);
+    assertEquals(1.40625,box[0],0.0001);
+    assertEquals(1.40625,box[1],0.0001);
+  }
+
 }

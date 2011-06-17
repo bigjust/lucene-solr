@@ -47,7 +47,13 @@ public interface Geometry2D {
    * Return the centroid
    */
   public Point2D centroid();
-  
+
+  /**
+   * Gets a minimum bounding rectangle for this shape.
+   * @return
+   */
+  public Rectangle boundingRectangle();
+
   /**
    * Returns information about how this shape intersects the given rectangle
    * @param r

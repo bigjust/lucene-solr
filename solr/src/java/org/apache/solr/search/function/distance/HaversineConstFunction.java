@@ -34,7 +34,7 @@ import java.util.Map;
 
 
 /**
- * Haversine function with one point constant
+ * "geodist" function: Haversine function with one point constant
  */
 public class HaversineConstFunction extends ValueSource {
 
@@ -113,10 +113,16 @@ public class HaversineConstFunction extends ValueSource {
         other = mv1;
       }
 
-      if (constants != null && other instanceof VectorValueSource) {
-        return new HaversineConstFunction(constants[0], constants[1], (VectorValueSource)other);
+      if (constants != null) {
+        if (other instanceof VectorValueSource) {
+          //TODO assert that other is not multi-value
+          return new HaversineConstFunction(constants[0], constants[1], (VectorValueSource)other);
+        } else if (other instanceof GeoHashValueSource) {
+          //other may be multiValue
+          return new HaversineMultiConstFunction(constants[0],constants[1],(GeoHashValueSource)other,true);
+        }
       }      
-
+      //TODO assert that neither mv1 nor mv2 are multi-value
       return new HaversineFunction(mv1, mv2, DistanceUtils.EARTH_MEAN_RADIUS_KM, true);
     }
   };

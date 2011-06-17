@@ -90,6 +90,11 @@ public class Ellipse implements Geometry2D {
     k3 = SQR(s / a) + SQR(c / b);
   }
 
+  @Override
+  public Rectangle boundingRectangle() {
+    throw new UnsupportedOperationException("TODO unimplemented");//TODO
+  }
+
   /**
    * Determines if a line segment intersects the ellipse and if so finds the
    * point(s) of intersection.
@@ -176,10 +181,10 @@ public class Ellipse implements Geometry2D {
 
   public IntersectCase intersect(Rectangle r) {
     // Test if all 4 corners of the rectangle are inside the ellipse
-    Point2D ul = new Point2D(r.MinPt().x(), r.MaxPt().y());
-    Point2D ur = new Point2D(r.MaxPt().x(), r.MaxPt().y());
-    Point2D ll = new Point2D(r.MinPt().x(), r.MinPt().y());
-    Point2D lr = new Point2D(r.MaxPt().x(), r.MinPt().y());
+    Point2D ul = r.getMinXMaxYPoint();
+    Point2D ur = r.getMaxPoint();
+    Point2D ll = r.getMinPoint();
+    Point2D lr = r.getMaxXMinYPoint();
     if (contains(ul) && contains(ur) && contains(ll) && contains(lr))
       return IntersectCase.CONTAINS;
 

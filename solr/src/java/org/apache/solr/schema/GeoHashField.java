@@ -17,43 +17,76 @@
 
 package org.apache.solr.schema;
 
+import org.apache.lucene.analysis.Tokenizer;
+import org.apache.lucene.analysis.ngram.EdgeNGramTokenizer;
 import org.apache.lucene.document.Fieldable;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.SortField;
-import org.apache.lucene.spatial.geohash.GeoHashUtils;
 import org.apache.lucene.spatial.DistanceUtils;
+import org.apache.lucene.spatial.geohash.GeoHashPrefixFilter;
+import org.apache.lucene.spatial.geohash.GridNode;
+import org.apache.lucene.spatial.geometry.shape.Geometry2D;
+import org.apache.lucene.spatial.geometry.shape.MultiGeom;
+import org.apache.lucene.spatial.geometry.shape.PointDistanceGeom;
 import org.apache.lucene.spatial.tier.InvalidGeoException;
+import org.apache.solr.analysis.BaseTokenizerFactory;
+import org.apache.solr.analysis.CharFilterFactory;
+import org.apache.solr.analysis.TokenFilterFactory;
+import org.apache.solr.analysis.TokenizerChain;
 import org.apache.solr.common.SolrException;
 import org.apache.solr.response.TextResponseWriter;
+import org.apache.solr.search.FunctionQParser;
 import org.apache.solr.search.QParser;
 import org.apache.solr.search.SolrConstantScoreQuery;
 import org.apache.solr.search.SpatialOptions;
-import org.apache.solr.search.function.LiteralValueSource;
+import org.apache.solr.search.function.GeoHashValueSource;
 import org.apache.solr.search.function.ValueSource;
-import org.apache.solr.search.function.ValueSourceRangeFilter;
-import org.apache.solr.search.function.distance.GeohashHaversineFunction;
-
 
 import java.io.IOException;
+import java.io.Reader;
+import java.util.Arrays;
+import java.util.Map;
 
 /**
  * This is a class that represents a <a
  * href="http://en.wikipedia.org/wiki/Geohash">Geohash</a> field. The field is
  * provided as a lat/lon pair and is internally represented as a string.
+ * <p/>
+ * The implementation is actually decoupled from GeoHashes, instead
+ *  {@link org.apache.lucene.spatial.geohash.GridNode.GridReferenceSystem} is used to facilitate future changes.
  *
  * @see org.apache.lucene.spatial.DistanceUtils#parseLatitudeLongitude(double[], String)
  */
 public class GeoHashField extends FieldType implements SpatialQueryable {
 
+  public static final int DEFAULT_LENGTH = GridNode.GridReferenceSystem.getMaxPrecision();//~12
+  private GridNode.GridReferenceSystem gridReferenceSystem;
+
+  @Override
+  protected void init(IndexSchema schema, Map<String, String> args) {
+    String len = args.remove("length");
+    gridReferenceSystem = new GridNode.GridReferenceSystem(len!=null?Integer.parseInt(len): DEFAULT_LENGTH);
+
+    CharFilterFactory[] filterFactories = new CharFilterFactory[0];
+    TokenFilterFactory[] tokenFilterFactories = new TokenFilterFactory[0];
+    analyzer = new TokenizerChain(filterFactories, new BaseTokenizerFactory() {
+      @Override
+      public Tokenizer create(Reader input) {
+        return new EdgeNGramTokenizer(input, EdgeNGramTokenizer.Side.FRONT, 1, Integer.MAX_VALUE);
+      }
+    }, tokenFilterFactories);
+    //(leave default queryAnalyzer -- single token)
+  }
+
+  public GridNode.GridReferenceSystem getGridReferenceSystem() {
+    return gridReferenceSystem;
+  }
 
   @Override
   public SortField getSortField(SchemaField field, boolean top) {
     return getStringSort(field, top);
   }
 
-    //QUESTION: Should we do a fast and crude one?  Or actually check distances
-  //Fast and crude could use EdgeNGrams, but that would require a different
-  //encoding.  Plus there are issues around the Equator/Prime Meridian
   public Query createSpatialQuery(QParser parser, SpatialOptions options) {
     double [] point = new double[0];
     try {
@@ -61,10 +94,16 @@ public class GeoHashField extends FieldType implements SpatialQueryable {
     } catch (InvalidGeoException e) {
       throw new SolrException(SolrException.ErrorCode.BAD_REQUEST, e);
     }
-    String geohash = GeoHashUtils.encode(point[0], point[1]);
-    //TODO: optimize this
-    return new SolrConstantScoreQuery(new ValueSourceRangeFilter(new GeohashHaversineFunction(getValueSource(options.field, parser),
-            new LiteralValueSource(geohash), options.radius), "0", String.valueOf(options.distance), true, true));
+    PointDistanceGeom pDistGeo = new PointDistanceGeom(
+            point[0],point[1],options.distance,options.radius);
+    Geometry2D shape = pDistGeo;
+    if (options.bbox) {
+      shape = pDistGeo.getEnclosingBox1();
+      Geometry2D shape2 = pDistGeo.getEnclosingBox2();
+      if (shape2 != null)
+        shape = new MultiGeom(Arrays.asList(shape,shape2));
+    }
+    return new SolrConstantScoreQuery(new GeoHashPrefixFilter(options.field.getName(),shape,gridReferenceSystem));
   }
 
   @Override
@@ -73,13 +112,11 @@ public class GeoHashField extends FieldType implements SpatialQueryable {
     writer.writeStr(name, toExternal(f), false);
   }
 
-
   @Override
   public String toExternal(Fieldable f) {
-    double[] latLon = GeoHashUtils.decode(f.stringValue());
-    return latLon[0] + "," + latLon[1];
+    double[] xy = gridReferenceSystem.decodeXY(f);
+    return xy[1] + "," + xy[0];
   }
-
 
   @Override
   public String toInternal(String val) {
@@ -91,15 +128,27 @@ public class GeoHashField extends FieldType implements SpatialQueryable {
     } catch (InvalidGeoException e) {
       throw new SolrException(SolrException.ErrorCode.BAD_REQUEST, e);
     }
-    return GeoHashUtils.encode(latLon[0], latLon[1]);
+    return gridReferenceSystem.encodeXY(latLon[1], latLon[0]);
   }
 
+//  //TODO Why does TrieField explicitly set the token stream on the field at this stage when it should happen later any way?
+//  @Override
+//  public Fieldable createField(SchemaField field, String externalVal, float boost) {
+//    Field f = (Field) super.createField(field, externalVal, boost);
+//    if (f != null) {
+//      f.setTokenStream(analyzer.tokenStream(field.getName(), new StringReader(externalVal)));
+//    }
+//    return f;
+//  }
+
+  @Override
+  public boolean isTokenized() {
+    return true;
+  }
 
   @Override
   public ValueSource getValueSource(SchemaField field, QParser parser) {
-    field.checkFieldCacheSource(parser);
-    return new StrFieldSource(field.name);
+    return GeoHashValueSource.getValueSource(field.name, (FunctionQParser) parser);
   }
-
 
 }

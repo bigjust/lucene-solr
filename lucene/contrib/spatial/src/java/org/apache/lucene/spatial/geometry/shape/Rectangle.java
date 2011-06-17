@@ -26,7 +26,7 @@ package org.apache.lucene.spatial.geometry.shape;
  * release.</font>
  */
 public class Rectangle implements Geometry2D {
-  private Point2D ptMin, ptMax;
+  private final Point2D ptMin, ptMax;
   
   public Rectangle() {
     ptMin=new Point2D(-1, 1);
@@ -34,24 +34,20 @@ public class Rectangle implements Geometry2D {
   }
   
   public Rectangle(Point2D ptMin, Point2D ptMax) {
+    assert ptMin.getX() <= ptMax.getX() && ptMin.getY() <= ptMax.getY();
     this.ptMin=new Point2D(ptMin);
     this.ptMax=new Point2D(ptMax);
   }
   
   public Rectangle(double x1, double y1, double x2, double y2) {
-    set(x1, y1, x2, y2);
+    this(new Point2D(x1,y1),new Point2D(x2,y2));
   }
 
   @Override
   public String toString() {
     return "[" + ptMin + "," + ptMax + "]";
   }
-  
-  private void set(double x1, double y1, double x2, double y2) {
-    this.ptMin=new Point2D(Math.min(x1, x2), Math.min(y1, y2));
-    this.ptMax=new Point2D(Math.max(x1, x2), Math.max(y1, y2));
-  }
-  
+
   public double area() {
     return (ptMax.getX() - ptMin.getX()) * (ptMax.getY() - ptMin.getY());
   }
@@ -59,6 +55,11 @@ public class Rectangle implements Geometry2D {
   public Point2D centroid() {
     return new Point2D( (ptMin.getX() + ptMax.getX()) / 2,
                   (ptMin.getY() + ptMax.getY()) / 2);
+  }
+
+  @Override
+  public Rectangle boundingRectangle() {
+    return this;
   }
 
   public boolean contains(Point2D p) {
@@ -73,25 +74,46 @@ public class Rectangle implements Geometry2D {
     ptMax.add(v);
   }
 
-  Point2D MinPt() {
-    return ptMin;
-  }
-
-  Point2D MaxPt() {
-    return ptMax;
-  }
-
-  public IntersectCase intersect(Rectangle r) {
-    throw new UnsupportedOperationException();
-    // TODO
-  }
-
   public Point2D getMaxPoint() {
     return ptMax;
   }
 
   public Point2D getMinPoint() {
     return ptMin;
+  }
+
+  public Point2D getMinXMaxYPoint() {
+    return new Point2D(getMinX(), getMaxY());
+  }
+
+  public Point2D getMaxXMinYPoint() {
+    return new Point2D(getMaxX(), getMinY());
+  }
+
+  public double getMinX() {
+    return ptMin.getX();
+  }
+
+  public double getMinY() {
+    return ptMin.getY();
+  }
+
+  public double getMaxX() {
+    return ptMax.getX();
+  }
+
+  public double getMaxY() {
+    return ptMax.getY();
+  }
+
+  public IntersectCase intersect(Rectangle r) {
+    if (getMaxY() >= r.getMaxY() && getMinY() <= r.getMinY() && getMaxX() >= r.getMaxX() && getMinX() <= r.getMinX())
+      return IntersectCase.CONTAINS;
+    if (  (getMinY() > r.getMaxY() || getMaxY() < r.getMinY()) ||
+          (getMinX() > r.getMaxX() || getMaxX() < r.getMinX())
+            )
+      return IntersectCase.OUTSIDE;
+    return IntersectCase.INTERSECTS;
   }
 
   @Override

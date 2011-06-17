@@ -287,29 +287,6 @@ public abstract class ValueSourceParser implements NamedListInitializedPlugin {
         return new HaversineFunction(pv1, pv2, radius, convert);
       }
     });
-
-    addParser("ghhsin", new ValueSourceParser() {
-      @Override
-      public ValueSource parse(FunctionQParser fp) throws ParseException {
-        double radius = fp.parseDouble();
-
-        ValueSource gh1 = fp.parseValueSource();
-        ValueSource gh2 = fp.parseValueSource();
-
-        return new GeohashHaversineFunction(gh1, gh2, radius);
-      }
-    });
-
-    addParser("geohash", new ValueSourceParser() {
-      @Override
-      public ValueSource parse(FunctionQParser fp) throws ParseException {
-
-        ValueSource lat = fp.parseValueSource();
-        ValueSource lon = fp.parseValueSource();
-
-        return new GeohashFunction(lat, lon);
-      }
-    });
     addParser("strdist", new ValueSourceParser() {
       @Override
       public ValueSource parse(FunctionQParser fp) throws ParseException {

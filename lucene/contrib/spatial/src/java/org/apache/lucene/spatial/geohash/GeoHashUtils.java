@@ -17,8 +17,9 @@
 
 package org.apache.lucene.spatial.geohash;
 
-import java.util.HashMap;
-import java.util.Map;
+import org.apache.lucene.spatial.geometry.shape.Rectangle;
+
+import java.util.Arrays;
 
 /**
  * Utilities for encoding and decoding geohashes. Based on
@@ -26,18 +27,22 @@ import java.util.Map;
  */
 public class GeoHashUtils {
 
+  static final int BASE = 32;
   private static final char[] BASE_32 = {'0', '1', '2', '3', '4', '5', '6',
       '7', '8', '9', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'j', 'k', 'm', 'n',
       'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z'};
 
-  private final static Map<Character,Integer> DECODE_MAP = new HashMap<Character,Integer>();
+  private static final int[] BASE_32_IDX;//sparse array of indexes from '0' to 'z'
 
-  private static final int PRECISION = 12;
+  public static final int PRECISION = 12;
   private static final int[] BITS = {16, 8, 4, 2, 1};
 
   static {
+    BASE_32_IDX = new int[BASE_32[BASE_32.length-1] - BASE_32[0] + 1];
+    assert BASE_32_IDX.length < 100;//reasonable length
+    Arrays.fill(BASE_32_IDX,-500);
     for (int i = 0; i < BASE_32.length; i++) {
-      DECODE_MAP.put(Character.valueOf(BASE_32[i]), Integer.valueOf(i));
+      BASE_32_IDX[BASE_32[i] - BASE_32[0]] = i;
     }
   }
 
@@ -52,16 +57,20 @@ public class GeoHashUtils {
    * @return Geohash encoding of the longitude and latitude
    */
   public static String encode(double latitude, double longitude) {
+    return encode(latitude,longitude,PRECISION);
+  }
+
+  public static String encode(double latitude, double longitude, int precision) {
     double[] latInterval = {-90.0, 90.0};
     double[] lngInterval = {-180.0, 180.0};
 
-    final StringBuilder geohash = new StringBuilder();
+    final StringBuilder geohash = new StringBuilder(precision);
     boolean isEven = true;
 
     int bit = 0;
     int ch = 0;
 
-    while (geohash.length() < PRECISION) {
+    while (geohash.length() < precision) {
       double mid = 0.0;
       if (isEven) {
         mid = (lngInterval[0] + lngInterval[1]) / 2D;
@@ -102,38 +111,84 @@ public class GeoHashUtils {
    * @return Array with the latitude at index 0, and longitude at index 1
    */
   public static double[] decode(String geohash) {
-    final double[] latInterval = {-90.0, 90.0};
-    final double[] lngInterval = {-180.0, 180.0};
+    Rectangle rect = decodeBoundary(geohash);
+    double latitude = (rect.getMinY() + rect.getMaxY()) / 2D;
+    double longitude = (rect.getMinX() + rect.getMaxX()) / 2D;
+    return new double[] {latitude, longitude};
+	}
 
+  /** Returns min-max lat, min-max lon. */
+  public static Rectangle decodeBoundary(String geohash) {
+    double minY = -90, maxY = 90, minX = -180, maxX = 180;
     boolean isEven = true;
 
-    double latitude;
-    double longitude;
     for (int i = 0; i < geohash.length(); i++) {
-      final int cd = DECODE_MAP.get(Character.valueOf(
-          geohash.charAt(i))).intValue();
+      char c = geohash.charAt(i);
+      if (c >= 'A' && c <= 'Z')
+        c -= ('A' - 'a');
+      final int cd = BASE_32_IDX[c - BASE_32[0]];//TODO check successful?
 
       for (int mask : BITS) {
         if (isEven) {
           if ((cd & mask) != 0) {
-            lngInterval[0] = (lngInterval[0] + lngInterval[1]) / 2D;
+            minX = (minX + maxX) / 2D;
           } else {
-            lngInterval[1] = (lngInterval[0] + lngInterval[1]) / 2D;
+            maxX = (minX + maxX) / 2D;
           }
         } else {
           if ((cd & mask) != 0) {
-            latInterval[0] = (latInterval[0] + latInterval[1]) / 2D;
+            minY = (minY + maxY) / 2D;
           } else {
-            latInterval[1] = (latInterval[0] + latInterval[1]) / 2D;
+            maxY = (minY + maxY) / 2D;
           }
         }
         isEven = !isEven;
       }
 
     }
-    latitude = (latInterval[0] + latInterval[1]) / 2D;
-    longitude = (lngInterval[0] + lngInterval[1]) / 2D;
+    return new Rectangle(minX,minY,maxX,maxY);
+  }
 
-    return new double[] {latitude, longitude};
-	}
+  public static String[] getSubGeoHashes(String baseGeoHash) {
+    String[] hashes = new String[BASE_32.length];
+    for (int i = 0; i < BASE_32.length; i++) {
+      char c = BASE_32[i];
+      hashes[i] = baseGeoHash+c;
+    }
+    return hashes;
+  }
+
+  public static double[] lookupDegreesSizeForHashLen(int hashLen) {
+    return new double[]{hashLenToLatHeight[hashLen], hashLenToLonWidth[hashLen]};
+  }
+
+  /**
+   * Return a geohash length that will have a width & height >= specified arguments.
+   */
+  public static int lookupHashLenForWidthHeight(double width, double height) {
+    //loop through hash length arrays from beginning till we find one.
+    for(int len = 1; len <= PRECISION; len++) {
+      double latHeight = hashLenToLatHeight[len];
+      double lonWidth = hashLenToLonWidth[len];
+      if (latHeight < height || lonWidth < width)
+        return len-1;//previous length is big enough to encompass specified width & height
+    }
+    return PRECISION;
+  }
+
+  /** See the table at http://en.wikipedia.org/wiki/Geohash */
+  private static final double[] hashLenToLatHeight, hashLenToLonWidth;
+  static {
+    hashLenToLatHeight = new double[PRECISION+1];
+    hashLenToLonWidth = new double[PRECISION+1];
+    hashLenToLatHeight[0] = 90*2;
+    hashLenToLonWidth[0] = 180*2;
+    boolean even = false;
+    for(int i = 1; i <= PRECISION; i++) {
+      hashLenToLatHeight[i] = hashLenToLatHeight[i-1]/(even?8:4);
+      hashLenToLonWidth[i] = hashLenToLonWidth[i-1]/(even?4:8);
+      even = ! even;
+    }
+  }
+
 }
